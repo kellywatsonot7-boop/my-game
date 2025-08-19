@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>爱豆版合成大西瓜（修正结束判定）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500&display=swap" rel="stylesheet">
+<style>
+    :root{--theme:#ff6b81;}
+    *{margin:0;padding:0;box-sizing:border-box;font-family:'Quicksand',sans-serif;}
+    body{background:#fff1f2;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden;}
+    h1{margin:10px 0;font-size:28px;color:var(--theme)}
+    #canvasWrap{position:relative;border:4px solid var(--theme);border-radius:12px;background:#fff;}
+    canvas{vertical-align:bottom;border-radius:8px;}
+    #warnLine{position:absolute;top:80px;left:0;width:100%;border-top:3px dashed var(--theme);z-index:1;pointer-events:none;}
+    #ui{margin:10px 0 5px;width:320px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;color:#333;}
+    #restart{background:#888;color:#fff;border:none;padding:6px 14px;border-radius:20px;font-size:14px;cursor:pointer;}
+    #levelSelect{display:flex;align-items:center;font-size:14px;}
+    #levelSelect input{width:100px;margin-left:6px;}
+    #gameOver{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:8px;font-size:28px;display:none;}
+    #gameOver button{margin-top:15px;font-size:18px;padding:8px 22px;}
+</style>
+</head>
+<body>
+    <h1>爱豆版合成大西瓜</h1>
+    <div id="ui">
+        <div>得分：<span id="score">0</span></div>
+        <div id="levelSelect">
+            难度 <input type="range" min="1" max="5" value="3" id="level"><span id="levelVal">3</span>
+        </div>
+        <button id="restart">重来</button>
+    </div>
+
+    <div id="canvasWrap">
+        <div id="warnLine"></div>
+        <canvas id="game" width="360" height="600"></canvas>
+        <div id="gameOver">
+            游戏结束<br>
+            得分：<span id="finalScore">0</span><br>
+            <button onclick="startGame()">再来一次</button>
+        </div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+<script>
+const Engine = Matter.Engine, Render = Matter.Render, Runner = Matter.Runner;
+const Bodies = Matter.Bodies, Body = Matter.Body, Events = Matter.Events;
+const Composite = Matter.Composite, Mouse = Matter.Mouse, MouseConstraint = Matter.MouseConstraint;
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const warnY = 80;                 // 警戒线 y
+const radiusLevels = [18,28,38,48,60,72,85]; // 7 个等级半径
+const idolImgs = [
+    'https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/9.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/8.png?raw=true',
+    'https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/7.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/6.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/5.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/4.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/3.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/2.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/10.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/1.png?raw=true'
+];
+
+let engine, render, runner, current, world, mouseConstraint;
+let score = 0, best = localStorage.getItem('best') || 0;
+let nextLevel = 0, difficulty = 3, gameRunning = true;
+
+/* ---------- 初始化 ---------- */
+function startGame(){
+    score = 0; gameRunning = true;
+    document.getElementById('score').textContent = 0;
+    document.getElementById('gameOver').style.display='none';
+    if(engine) Composite.clear(world);
+    engine = Engine.create();
+    world = engine.world;
+    engine.gravity.y = 0.7 + difficulty*0.2;
+
+    render = Render.create({
+        canvas, engine,
+        options:{width:360,height:600,wireframes:false,background:'transparent'}
+    });
+    Render.run(render);
+    runner = Runner.create(); Runner.run(runner,engine);
+
+    const walls = [
+        Bodies.rectangle(-10,300,20,600,{isStatic:true}),
+        Bodies.rectangle(370,300,20,600,{isStatic:true}),
+        Bodies.rectangle(180,610,360,20,{isStatic:true})
+    ];
+    Composite.add(world,walls);
+
+    const mouse = Mouse.create(render.canvas);
+    mouseConstraint = MouseConstraint.create(engine,{mouse});
+    Composite.add(world,mouseConstraint);
+
+    Events.on(render,'afterRender',drawCustom);
+    Events.on(engine,'beforeUpdate',checkGameOver);
+    Events.on(engine,'collisionStart',handleMerge);
+
+    genNext();
+    canvas.addEventListener('click',drop,{once:true});
+}
+
+/* ---------- 自定义绘制矩形头像 ---------- */
+function drawCustom(){
+    const bodies = Composite.allBodies(world);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for(const body of bodies){
+        if(body.label!=='idol') continue;
+        const {position,angle,level} = body;
+        const r = radiusLevels[level];
+        ctx.save();
+        ctx.translate(position.x,position.y);
+        ctx.rotate(angle);
+        ctx.drawImage(body.img,-r,-r,r*2,r*2);
+        ctx.restore();
+    }
+}
+
+/* ---------- 生成下一个待投放头像 ---------- */
+function genNext(){
+    nextLevel = Math.floor(Math.random()*3);
+    current = createIdol(180,40,nextLevel,true);
+}
+
+function createIdol(x,y,level,isNext=false){
+    const r = radiusLevels[level];
+    const body = Bodies.circle(x,y,r,{
+        restitution:0.3,
+        friction:0.01,
+        label:'idol',
+        level,
+        isStatic:isNext,
+        render:{visible:false}
+    });
+    body.img = new Image();
+    body.img.src = idolImgs[level];
+    Composite.add(world,body);
+    return body;
+}
+
+/* ---------- 投放 ---------- */
+function drop(e){
+    if(!gameRunning || !current) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const r = radiusLevels[current.level];
+    // 强制放到警戒线下方，避免开局结束
+    const safeY = warnY + r + 5;
+    Body.setPosition(current,{x,y:safeY});
+    Body.setStatic(current,false);
+    canvas.removeEventListener('click',drop);
+    setTimeout(()=>{
+        if(gameRunning){genNext();canvas.addEventListener('click',drop,{once:true});}
+    },500);
+}
+
+/* ---------- 合成升级 ---------- */
+function handleMerge(e){
+    const pairs = e.pairs;
+    for(let {bodyA,bodyB} of pairs){
+        if(bodyA.label==='idol' && bodyB.label==='idol' && bodyA.level===bodyB.level && bodyA.level<6){
+            const level = bodyA.level+1;
+            const midX = (bodyA.position.x+bodyB.position.x)/2;
+            const midY = (bodyA.position.y+bodyB.position.y)/2;
+            Composite.remove(world,[bodyA,bodyB]);
+            const newOne = createIdol(midX,midY,level);
+            Body.applyForce(newOne,newOne.position,{x:0,y:-0.05});
+            score += (level+1)*10;
+            document.getElementById('score').textContent = score;
+        }
+    }
+}
+
+/* ---------- 每帧检测游戏结束 ---------- */
+function checkGameOver(){
+    if(!gameRunning) return;
+    const bodies = Composite.allBodies(world);
+    for(const b of bodies){
+        if(b.label==='idol' && !b.isStatic){
+            // 头像顶部越线才结束
+            if(b.position.y - radiusLevels[b.level] < warnY){
+                endGame();
+                return;
+            }
+        }
+    }
+}
+
+/* ---------- 结束 ---------- */
+function endGame(){
+    gameRunning = false;
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('gameOver').style.display='flex';
+    if(score>best){best=score;localStorage.setItem('best',best);}
+}
+
+/* ---------- 难度滑条 ---------- */
+const levelSlider = document.getElementById('level');
+levelSlider.oninput = ()=>{
+    difficulty = +levelSlider.value;
+    document.getElementById('levelVal').textContent = difficulty;
+    startGame();
+};
+document.getElementById('restart').onclick = ()=>startGame();
+window.onload = startGame;
+</script>
+</body>
+</html>
