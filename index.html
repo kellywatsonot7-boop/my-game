@@ -2,38 +2,35 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>爱豆版合成大西瓜（修正结束判定）</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>合成梨香圆</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500&display=swap" rel="stylesheet">
 <style>
     :root{--theme:#ff6b81;}
     *{margin:0;padding:0;box-sizing:border-box;font-family:'Quicksand',sans-serif;}
-    body{background:#fff1f2;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden;}
-    h1{margin:10px 0;font-size:28px;color:var(--theme)}
-    #canvasWrap{position:relative;border:4px solid var(--theme);border-radius:12px;background:#fff;}
-    canvas{vertical-align:bottom;border-radius:8px;}
-    #warnLine{position:absolute;top:80px;left:0;width:100%;border-top:3px dashed var(--theme);z-index:1;pointer-events:none;}
-    #ui{margin:10px 0 5px;width:320px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;color:#333;}
-    #restart{background:#888;color:#fff;border:none;padding:6px 14px;border-radius:20px;font-size:14px;cursor:pointer;}
-    #levelSelect{display:flex;align-items:center;font-size:14px;}
-    #levelSelect input{width:100px;margin-left:6px;}
-    #gameOver{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:8px;font-size:28px;display:none;}
-    #gameOver button{margin-top:15px;font-size:18px;padding:8px 22px;}
+    body{background:#fff1f2;display:flex;flex-direction:column;align-items:center;height:100vh;overflow:hidden;padding:10px;}
+    h1{margin:10px 0;font-size:clamp(1.5rem,5vw,2rem);color:var(--theme);text-align:center;}
+    #canvasWrap{position:relative;border:4px solid var(--theme);border-radius:12px;background:#fff;width:100%;max-width:400px;}
+    canvas{vertical-align:bottom;border-radius:8px;width:100%;height:auto;display:block;}
+    #warnLine{position:absolute;left:0;width:100%;border-top:3px dashed var(--theme);z-index:1;pointer-events:none;opacity:0;transition:opacity .3s}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+    .blinking{animation:blink 1s infinite}
+    #ui{margin:10px 0 5px;width:100%;max-width:400px;display:flex;justify-content:space-between;align-items:center;font-weight:bold;color:#333;padding:0 5px;}
+    #restart{background:#888;color:#fff;border:none;padding:8px 16px;border-radius:20px;font-size:16px;cursor:pointer;}
+    #gameOver{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:8px;font-size:clamp(1.5rem,5vw,2.5rem);display:none;}
+    #gameOver button{margin-top:15px;font-size:clamp(1rem,3vw,1.5rem);padding:10px 24px;border-radius:20px;border:none;background:var(--theme);color:white;cursor:pointer;}
 </style>
 </head>
 <body>
-    <h1>爱豆版合成大西瓜</h1>
+    <h1>合成梨香圆</h1>
     <div id="ui">
         <div>得分：<span id="score">0</span></div>
-        <div id="levelSelect">
-            难度 <input type="range" min="1" max="5" value="3" id="level"><span id="levelVal">3</span>
-        </div>
         <button id="restart">重来</button>
     </div>
 
     <div id="canvasWrap">
         <div id="warnLine"></div>
-        <canvas id="game" width="360" height="600"></canvas>
+        <canvas id="game"></canvas>
         <div id="gameOver">
             游戏结束<br>
             得分：<span id="finalScore">0</span><br>
@@ -43,162 +40,278 @@
 
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script>
-const Engine = Matter.Engine, Render = Matter.Render, Runner = Matter.Runner;
-const Bodies = Matter.Bodies, Body = Matter.Body, Events = Matter.Events;
-const Composite = Matter.Composite, Mouse = Matter.Mouse, MouseConstraint = Matter.MouseConstraint;
+/* ===================== 基础模块 ===================== */
+const Engine   = Matter.Engine,  Render = Matter.Render, Runner = Matter.Runner;
+const Bodies   = Matter.Bodies,  Body   = Matter.Body,   Events = Matter.Events;
+const Composite= Matter.Composite,Mouse  = Matter.Mouse,  MouseConstraint = Matter.MouseConstraint;
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const warnY = 80;                 // 警戒线 y
-const radiusLevels = [18,28,38,48,60,72,85]; // 7 个等级半径
+const ctx     = canvas.getContext('2d');
+const wrap   = document.getElementById('canvasWrap');
+const warnLine= document.getElementById('warnLine');
+const scoreEl= document.getElementById('score');
+
+const radiusLevels = [18,28,38,46,54,62,70,78,86,94,102];
 const idolImgs = [
-    'https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/9.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/8.png?raw=true',
-    'https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/7.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/6.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/5.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/4.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/3.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/2.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/10.png?raw=true','https://github.com/kellywatsonot7-boop/my-image-bed/blob/main/1.png?raw=true'
+    'https://imgtu.com/uploads/e34nei5z/file_7afbb1.png',
+    'https://imgtu.com/uploads/e34phd3w/file_602e8f.png',
+    'https://imgtu.com/uploads/e34raklb/file_9eb9cd.png',
+    'https://imgtu.com/uploads/e34tuzb6/file_f19c90.png',
+    'https://imgtu.com/uploads/e33y5hzn/file_8266e4.png',
+    'https://imgtu.com/uploads/e340ae9j/file_09dd8c.png',
+    'https://imgtu.com/uploads/e343x1ng/file_10fb15.png',
+    'https://imgtu.com/uploads/e3455rzc/file_fb5c81.png',
+    'https://imgtu.com/uploads/e34lwldx/10.png',
+    'https://imgtu.com/uploads/e3471wzm/file_4a47a0.png'
 ];
 
-let engine, render, runner, current, world, mouseConstraint;
-let score = 0, best = localStorage.getItem('best') || 0;
-let nextLevel = 0, difficulty = 3, gameRunning = true;
+let engine, render, runner, world, mouseConstraint;
+let current, gameRunning = true;
+let score = 0, best = localStorage.getItem('best')||0;
+let nextLevel = 0;
+let warnY, scaleFactor;
+let gameW, gameH;
+let audioCtx = null; 
 
-/* ---------- 初始化 ---------- */
+/* ===================== 尺寸适配 ===================== */
+function initSize(){
+    gameW = wrap.clientWidth;
+    gameH = gameW * 5 / 3;
+    scaleFactor = gameW / 360;
+    warnY = gameH * 0.13;
+    canvas.width  = gameW;
+    canvas.height = gameH;
+    warnLine.style.top = warnY + 'px';
+}
+window.addEventListener('resize',()=>{
+    if(gameRunning){
+        const s = score;
+        initSize(); startGame(); score = s; scoreEl.textContent = s;
+    }
+});
+
+/* =============== 热身函数 =============== */
+function warmAudio() {
+    if (audioCtx) return;                // 已经热身过
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.001); // 极短，人耳听不到
+    } catch (e) { /* 忽略低版本 */ }
+}
+
+/* ===================== 特效 ===================== */
+function createParticles(x,y,lv){
+    const r = radiusLevels[lv]*scaleFactor;
+    const count = Math.min(35,lv*4);
+    const colors = ['#ff9a9e','#fad0c4','#ffecd2','#fcb69f',
+                    '#ff6b81','#ff8fa3','#ffb3c1','#ffccd5','#ffd6e0'];
+    for(let i=0;i<count;i++){
+        const p = Bodies.circle(
+            x+(Math.random()-.5)*r*1.2,
+            y+(Math.random()-.5)*r*1.2,
+            Math.random()*3+2*scaleFactor,
+            {
+                render:{fillStyle:colors[Math.floor(Math.random()*colors.length)]},
+                restitution:.6,friction:.05,density:.0003,label:'particle'
+            }
+        );
+        const angle = Math.random()*Math.PI*2;
+        const force = Math.random()*.012+.008;
+        Body.applyForce(p,p.position,{x:Math.cos(angle)*force,y:Math.sin(angle)*force});
+        Composite.add(world,p);
+        setTimeout(()=>Composite.remove(world,p),1200);
+    }
+}
+function createFlash(x,y,lv){
+    const flash = {x,y,r:radiusLevels[lv]*scaleFactor*1.5,alpha:1,scale:1};
+    const iv = setInterval(()=>{
+        if(!gameRunning){clearInterval(iv);return;}
+        flash.alpha-=.05; flash.scale+=.03;
+        if(flash.alpha<=0){clearInterval(iv);return;}
+        Events.once(render,'afterRender',()=>{
+            ctx.save(); ctx.globalAlpha=flash.alpha;
+            ctx.beginPath(); ctx.arc(flash.x,flash.y,flash.r*flash.scale,0,Math.PI*2);
+            ctx.fillStyle='rgba(255,255,255,.8)'; ctx.fill(); ctx.restore();
+        });
+    },16);
+}
+function playSound(){
+      if (!audioCtx) return;               // 防御
+      try {
+           const osc = audioCtx.createOscillator();
+           const gain = audioCtx.createGain();
+           osc.type = 'sine';
+           osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+           osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+           gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+           gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+           osc.connect(gain);
+           gain.connect(audioCtx.destination);
+           osc.start();
+           osc.stop(audioCtx.currentTime + 0.3);
+       } catch (e) { /* 忽略 */ }
+}
+function congrats(){
+    const pop=document.createElement('div');
+    pop.style.cssText=`position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    background:rgba(255,255,255,.95);padding:25px;border-radius:12px;text-align:center;
+    z-index:100;color:#ff6b81;font-size:clamp(1rem,5vw,1.5rem);box-shadow:0 4px 20px rgba(0,0,0,.2)`;
+    pop.innerHTML='🎉 恭喜合成最大等级！<br><button style="margin-top:15px;padding:8px 16px;background:#ff6b81;color:white;border:none;border-radius:5px;font-size:1rem">确定</button>';
+    document.body.appendChild(pop);
+    pop.querySelector('button').addEventListener('click',()=>document.body.removeChild(pop));
+}
+
+/* ===================== 游戏主体 ===================== */
 function startGame(){
-    score = 0; gameRunning = true;
-    document.getElementById('score').textContent = 0;
+    warmAudio();   // 第一次即热身
+    score=0; gameRunning=true; scoreEl.textContent=0;
     document.getElementById('gameOver').style.display='none';
-    if(engine) Composite.clear(world);
-    engine = Engine.create();
-    world = engine.world;
-    engine.gravity.y = 0.7 + difficulty*0.2;
-
-    render = Render.create({
-        canvas, engine,
-        options:{width:360,height:600,wireframes:false,background:'transparent'}
-    });
+    if(engine){Runner.stop(runner);Render.stop(render);Composite.clear(world);}
+    initSize();
+    engine=Engine.create(); world=engine.world; engine.gravity.y=1;
+    render=Render.create({canvas,engine,options:{width:gameW,height:gameH,wireframes:false,background:'transparent'}});
     Render.run(render);
-    runner = Runner.create(); Runner.run(runner,engine);
+    runner=Runner.create(); Runner.run(runner,engine);
 
-    const walls = [
-        Bodies.rectangle(-10,300,20,600,{isStatic:true}),
-        Bodies.rectangle(370,300,20,600,{isStatic:true}),
-        Bodies.rectangle(180,610,360,20,{isStatic:true})
+    const walls=[
+        Bodies.rectangle(-10*scaleFactor,gameH/2,20*scaleFactor,gameH,{isStatic:true}),
+        Bodies.rectangle(gameW+10*scaleFactor,gameH/2,20*scaleFactor,gameH,{isStatic:true}),
+        Bodies.rectangle(gameW/2,gameH+10*scaleFactor,gameW,20*scaleFactor,{isStatic:true})
     ];
     Composite.add(world,walls);
 
-    const mouse = Mouse.create(render.canvas);
-    mouseConstraint = MouseConstraint.create(engine,{mouse});
+    const mouse=Mouse.create(render.canvas);
+    mouseConstraint = MouseConstraint.create(engine, {
+    mouse,
+    constraint: { stiffness: 0.2, render: { visible: false } },
+    collisionFilter: {
+        mask: 0x0002,      // 只检测位掩码 0x0002 的物体
+    }
+});
     Composite.add(world,mouseConstraint);
 
     Events.on(render,'afterRender',drawCustom);
-    Events.on(engine,'beforeUpdate',checkGameOver);
+    Events.on(engine,'beforeUpdate',checkOver);
     Events.on(engine,'collisionStart',handleMerge);
 
     genNext();
-    canvas.addEventListener('click',drop,{once:true});
+    bindEvents();
 }
-
-/* ---------- 自定义绘制矩形头像 ---------- */
 function drawCustom(){
-    const bodies = Composite.allBodies(world);
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    for(const body of bodies){
-        if(body.label!=='idol') continue;
-        const {position,angle,level} = body;
-        const r = radiusLevels[level];
-        ctx.save();
-        ctx.translate(position.x,position.y);
-        ctx.rotate(angle);
-        ctx.drawImage(body.img,-r,-r,r*2,r*2);
+    const bodies=Composite.allBodies(world);
+    ctx.clearRect(0,0,gameW,gameH);
+    for(const b of bodies){
+        if(b.label!=='idol')continue;
+        const r=radiusLevels[b.level]*scaleFactor;
+        ctx.save(); ctx.translate(b.position.x,b.position.y); ctx.rotate(b.angle);
+        ctx.drawImage(b.img,-r,-r,r*2,r*2);
         ctx.restore();
     }
 }
-
-/* ---------- 生成下一个待投放头像 ---------- */
 function genNext(){
-    nextLevel = Math.floor(Math.random()*3);
-    current = createIdol(180,40,nextLevel,true);
+    nextLevel=Math.floor(Math.random()*5);
+    current=createFruit(gameW/2,40*scaleFactor,nextLevel,true);
 }
-
-function createIdol(x,y,level,isNext=false){
-    const r = radiusLevels[level];
-    const body = Bodies.circle(x,y,r,{
-        restitution:0.3,
-        friction:0.01,
-        label:'idol',
-        level,
-        isStatic:isNext,
-        render:{visible:false}
-    });
-    body.img = new Image();
-    body.img.src = idolImgs[level];
+function createFruit(x,y,lv,isStatic=false){
+    const r=radiusLevels[lv]*scaleFactor;
+    const body=Bodies.circle(x,y,r,{restitution:.2,friction:.01,label:'idol',level:lv,isStatic,collisionFilter: { category: isStatic ? 0x0002 : 0x0001 }});
+    body.img=new Image(); body.img.src=idolImgs[lv];
     Composite.add(world,body);
     return body;
 }
-
-/* ---------- 投放 ---------- */
+/* ===== 投放 ===== */
+function bindEvents(){
+    canvas.addEventListener('touchstart',drop,{passive:false});
+    canvas.addEventListener('mousedown',drop);
+}
+function unbind(){ canvas.removeEventListener('touchstart',drop); canvas.removeEventListener('mousedown',drop); }
 function drop(e){
-    if(!gameRunning || !current) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const r = radiusLevels[current.level];
-    // 强制放到警戒线下方，避免开局结束
-    const safeY = warnY + r + 5;
+    e.preventDefault();
+    if(!gameRunning||!current)return;
+    const rect=canvas.getBoundingClientRect();
+    const clientX=e.clientX||(e.touches&&e.touches[0].clientX);
+    const x=(clientX-rect.left)*(canvas.width/rect.width);
+    const r=radiusLevels[current.level]*scaleFactor;
+    const safeY=warnY+r+5;
     Body.setPosition(current,{x,y:safeY});
     Body.setStatic(current,false);
-    canvas.removeEventListener('click',drop);
-    setTimeout(()=>{
-        if(gameRunning){genNext();canvas.addEventListener('click',drop,{once:true});}
-    },500);
+    setTimeout(()=>gameRunning&&genNext(),300);
 }
-
-/* ---------- 合成升级 ---------- */
+/* ===== 合成 ===== */
 function handleMerge(e){
-    const pairs = e.pairs;
-    for(let {bodyA,bodyB} of pairs){
-        if(bodyA.label==='idol' && bodyB.label==='idol' && bodyA.level===bodyB.level && bodyA.level<6){
-            const level = bodyA.level+1;
-            const midX = (bodyA.position.x+bodyB.position.x)/2;
-            const midY = (bodyA.position.y+bodyB.position.y)/2;
-            Composite.remove(world,[bodyA,bodyB]);
-            const newOne = createIdol(midX,midY,level);
-            Body.applyForce(newOne,newOne.position,{x:0,y:-0.05});
-            score += (level+1)*10;
-            document.getElementById('score').textContent = score;
-        }
+    for(const {bodyA,bodyB} of e.pairs){
+        if(bodyA.label!=='idol'||bodyB.label!=='idol'||bodyA.level!==bodyB.level||bodyA.isStatic||bodyB.isStatic)continue;
+        const mx=(bodyA.position.x+bodyB.position.x)/2;
+        const my=(bodyA.position.y+bodyB.position.y)/2;
+        const newLv=bodyA.level+1;
+        Composite.remove(world,[bodyA,bodyB]);
+        if(newLv>=10){congrats();}else{createFruit(mx,my,newLv);}
+        createParticles(mx,my,bodyA.level);
+        createFlash(mx,my,bodyA.level);
+        playSound();
+        score+=(newLv+1)*10; scoreEl.textContent=score;
+        break;
     }
 }
+/* ===== 结束检测 ===== */
+function checkOver() {
+    if (!gameRunning) return;
 
-/* ---------- 每帧检测游戏结束 ---------- */
-function checkGameOver(){
-    if(!gameRunning) return;
     const bodies = Composite.allBodies(world);
-    for(const b of bodies){
-        if(b.label==='idol' && !b.isStatic){
-            // 头像顶部越线才结束
-            if(b.position.y - radiusLevels[b.level] < warnY){
-                endGame();
-                return;
-            }
+    let needBlink = false;   // 是否需要闪烁
+    let gameEnd   = false;   // 是否结束
+
+    for (const b of bodies) {
+        if (b.label !== 'idol' || b.isStatic) continue;   // 忽略墙和待投放水果
+
+        const top = b.position.y - radiusLevels[b.level] * scaleFactor;
+        const dist = top - warnY;
+	const goingUp = b.velocity.y < 0;
+
+        // 真正越线 → 游戏结束
+        if (top < warnY) {
+            gameEnd = true;
+            break;
+        }
+        // 接近警戒线 → 需要闪烁
+        if (dist >= 0 && dist < 100 * scaleFactor && goingUp ) {
+            needBlink = true;
         }
     }
+
+    /* 警戒线 UI */
+    if (gameEnd) {
+        warnLine.style.borderTopStyle = 'solid';   // 实线
+        warnLine.classList.remove('blinking');
+        endGame();
+        return;
+    }
+    if (needBlink) {
+        warnLine.style.borderTopStyle = 'dashed';
+        warnLine.classList.add('blinking');
+    } else {
+        warnLine.style.borderTopStyle = 'dashed';
+        warnLine.classList.remove('blinking');
+    }
+    warnLine.style.opacity = needBlink ? 1 : 0;
 }
 
-/* ---------- 结束 ---------- */
 function endGame(){
-    gameRunning = false;
-    document.getElementById('finalScore').textContent = score;
+    gameRunning=false;
+    document.getElementById('finalScore').textContent=score;
     document.getElementById('gameOver').style.display='flex';
     if(score>best){best=score;localStorage.setItem('best',best);}
+    unbind();
 }
 
-/* ---------- 难度滑条 ---------- */
-const levelSlider = document.getElementById('level');
-levelSlider.oninput = ()=>{
-    difficulty = +levelSlider.value;
-    document.getElementById('levelVal').textContent = difficulty;
-    startGame();
-};
-document.getElementById('restart').onclick = ()=>startGame();
-window.onload = startGame;
+/* ===================== 入口 ===================== */
+document.getElementById('restart').addEventListener('click',startGame);
+window.addEventListener('load',()=>{initSize();startGame();});
 </script>
 </body>
 </html>
